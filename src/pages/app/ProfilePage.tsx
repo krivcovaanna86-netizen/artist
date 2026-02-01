@@ -8,27 +8,43 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { Badge } from '../../components/ui/Badge'
 import { formatDate, formatPrice, formatRelativeTime } from '../../lib/utils/format'
 
-export default function ProfilePage() {
+function ErrorFallback({ error }: { error: Error }) {
+  return (
+    <div className="p-4 bg-red-100 text-red-800 m-4 rounded-lg">
+      <h2 className="font-bold mb-2">Ошибка:</h2>
+      <pre className="text-sm whitespace-pre-wrap break-all">{error.message}</pre>
+      <pre className="text-xs mt-2 whitespace-pre-wrap break-all">{error.stack}</pre>
+    </div>
+  )
+}
+
+function ProfilePageContent() {
   const navigate = useNavigate()
   const { user } = useAuthStore()
 
   // Fetch subscription
-  const { data: subscription, isLoading: subLoading } = useQuery({
+  const { data: subscription, isLoading: subLoading, error: subError } = useQuery({
     queryKey: ['subscription'],
     queryFn: getUserSubscription,
   })
 
   // Fetch purchases
-  const { data: purchases = [], isLoading: purchasesLoading } = useQuery({
+  const { data: purchases = [], isLoading: purchasesLoading, error: purchasesError } = useQuery({
     queryKey: ['purchases'],
     queryFn: getUserPurchases,
   })
 
   // Fetch history
-  const { data: historyData, isLoading: historyLoading } = useQuery({
+  const { data: historyData, isLoading: historyLoading, error: historyError } = useQuery({
     queryKey: ['history'],
     queryFn: () => getUserHistory({ limit: 10 }),
   })
+
+  // Show any API errors
+  const apiError = subError || purchasesError || historyError
+  if (apiError) {
+    return <ErrorFallback error={apiError as Error} />
+  }
 
   if (!user) {
     return (
@@ -51,7 +67,7 @@ export default function ProfilePage() {
             {user.photoUrl ? (
               <img src={user.photoUrl} alt={user.firstName} className="w-full h-full object-cover" />
             ) : (
-              user.firstName[0].toUpperCase()
+              user.firstName?.[0]?.toUpperCase() || '?'
             )}
           </div>
 
@@ -77,9 +93,11 @@ export default function ProfilePage() {
             ) : subscription?.isActive ? (
               <div className="flex items-center gap-2">
                 <Badge variant="success">Активна</Badge>
-                <span className="text-sm text-tg-hint">
-                  до {formatDate(subscription.expiresAt!)}
-                </span>
+                {subscription.expiresAt && (
+                  <span className="text-sm text-tg-hint">
+                    до {formatDate(subscription.expiresAt)}
+                  </span>
+                )}
               </div>
             ) : (
               <Badge variant="default">Не активна</Badge>
@@ -170,7 +188,7 @@ export default function ProfilePage() {
         
         {historyLoading ? (
           <TrackListSkeleton count={3} />
-        ) : !historyData?.history.length ? (
+        ) : !historyData?.history?.length ? (
           <div className="p-4">
             <EmptyState
               title="История пуста"
@@ -223,4 +241,12 @@ export default function ProfilePage() {
       </section>
     </div>
   )
+}
+
+export default function ProfilePage() {
+  try {
+    return <ProfilePageContent />
+  } catch (error) {
+    return <ErrorFallback error={error as Error} />
+  }
 }
