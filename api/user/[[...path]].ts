@@ -9,11 +9,12 @@ async function handler(req: AuthenticatedRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { path } = req.query
-  // Исправление: правильно обрабатываем path
-  const route = Array.isArray(path) ? path[0] : path || ''
+  // Парсим route из URL напрямую
+  const url = req.url || ''
+  const match = url.match(/\/api\/user\/?([\w-]*)/)
+  const route = match?.[1] || ''
   
-  console.log('User API route:', route, 'path:', path) // Добавьте для отладки
+  console.log('User API - URL:', url, 'Route:', route)
 
   try {
     // PROFILE
@@ -132,7 +133,7 @@ async function handler(req: AuthenticatedRequest, res: VercelResponse) {
 
       return res.status(200).json({
         subscription: {
-          isActive,
+          isActive: !!isActive,
           expiresAt: user.subscriptionUntil,
           price: settings.subscriptionPrice,
           history: subscriptions.map((sub) => ({
@@ -145,7 +146,7 @@ async function handler(req: AuthenticatedRequest, res: VercelResponse) {
       })
     }
 
-    return res.status(404).json({ error: 'Not found' })
+    return res.status(404).json({ error: 'Not found', route, url })
   } catch (error) {
     console.error('User API error:', error)
     return res.status(500).json({ error: 'Internal server error' })
