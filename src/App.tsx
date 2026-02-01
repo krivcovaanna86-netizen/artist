@@ -25,26 +25,30 @@ import AdminSettings from './pages/admin/SettingsPage'
 // Components
 import { LoadingScreen } from './components/ui/LoadingScreen'
 import { MiniPlayer } from './components/player/MiniPlayer'
-
+import { useState } from 'react'
 function App() {
   const { isReady, webApp } = useTelegramWebApp()
-  const { user, isLoading, fetchUser } = useAuthStore()
+  const { user, isLoading, error, fetchUser } = useAuthStore()
+  const [appError, setAppError] = useState<string | null>(null)
 
   useEffect(() => {
     if (isReady && webApp) {
-      // Expand the app to full height
       webApp.expand()
-      
-      // Set header color
       webApp.setHeaderColor('secondary_bg_color')
-      
-      // Enable closing confirmation
       webApp.enableClosingConfirmation()
-
-      // Fetch user data
       fetchUser()
     }
   }, [isReady, webApp, fetchUser])
+
+  // Показать ошибку если есть
+  if (appError || error) {
+    return (
+      <div className="min-h-screen bg-tg-bg text-tg-text p-4">
+        <h1 className="text-red-500 text-xl mb-4">Ошибка:</h1>
+        <pre className="text-sm whitespace-pre-wrap">{appError || error}</pre>
+      </div>
+    )
+  }
 
   if (!isReady || isLoading) {
     return <LoadingScreen />
