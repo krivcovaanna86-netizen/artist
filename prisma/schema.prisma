@@ -1,0 +1,168 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL")
+}
+
+// Пользователи
+model User {
+  id                String    @id @default(uuid())
+  telegramId        BigInt    @unique @map("telegram_id")
+  username          String?   @db.VarChar(255)
+  firstName         String    @map("first_name") @db.VarChar(255)
+  lastName          String?   @map("last_name") @db.VarChar(255)
+  photoUrl          String?   @map("photo_url") @db.VarChar(500)
+  isAdmin           Boolean   @default(false) @map("is_admin")
+  subscriptionUntil DateTime? @map("subscription_until")
+  platform          String    @default("telegram") @db.VarChar(20)
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  purchases       Purchase[]
+  subscriptions   Subscription[]
+  playHistory     PlayHistory[]
+  dailyPlayLimits DailyPlayLimit[]
+  payments        Payment[]
+
+  @@map("users")
+}
+
+// Категории
+model Category {
+  id        String   @id @default(uuid())
+  name      String   @db.VarChar(255)
+  slug      String   @unique @db.VarChar(255)
+  icon      String?  @db.VarChar(50)
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tracks TrackCategory[]
+
+  @@map("categories")
+}
+
+// Треки
+model Track {
+  id          String   @id @default(uuid())
+  title       String   @db.VarChar(255)
+  artist      String   @db.VarChar(255)
+  duration    Int      @default(0)
+  filePath    String   @map("file_path") @db.VarChar(500)
+  coverPath   String?  @map("cover_path") @db.VarChar(500)
+  price       Int      @default(0)
+  isPublished Boolean  @default(false) @map("is_published")
+  playCount   Int      @default(0) @map("play_count")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  categories      TrackCategory[]
+  purchases       Purchase[]
+  playHistory     PlayHistory[]
+  dailyPlayLimits DailyPlayLimit[]
+  payments        Payment[]
+
+  @@map("tracks")
+}
+
+// Связь треков и категорий
+model TrackCategory {
+  trackId    String   @map("track_id")
+  categoryId String   @map("category_id")
+  track      Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([trackId, categoryId])
+  @@map("track_categories")
+}
+
+// Покупки треков
+model Purchase {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  trackId   String   @map("track_id")
+  price     Int
+  paymentId String?  @map("payment_id") @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  track Track @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, trackId])
+  @@map("purchases")
+}
+
+// Подписки
+model Subscription {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  price     Int
+  paymentId String?  @map("payment_id") @db.VarChar(255)
+  startedAt DateTime @default(now()) @map("started_at")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+// История прослушиваний
+model PlayHistory {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  trackId   String   @map("track_id")
+  playedAt  DateTime @default(now()) @map("played_at")
+  completed Boolean  @default(false)
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  track Track @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@map("play_history")
+}
+
+// Дневные лимиты прослушиваний
+model DailyPlayLimit {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  trackId   String   @map("track_id")
+  date      DateTime @db.Date
+  playCount Int      @default(0) @map("play_count")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  track Track @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, trackId, date])
+  @@map("daily_play_limits")
+}
+
+// Настройки сервиса
+model Setting {
+  key       String   @id @db.VarChar(255)
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
+
+// Платежи
+model Payment {
+  id                String   @id @default(uuid())
+  userId            String   @map("user_id")
+  type              String   @db.VarChar(20) // 'subscription' | 'track'
+  trackId           String?  @map("track_id")
+  amount            Int
+  status            String   @default("pending") @db.VarChar(20) // 'pending' | 'success' | 'failed' | 'refunded'
+  providerPaymentId String?  @map("provider_payment_id") @db.VarChar(255)
+  providerData      Json?    @map("provider_data")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  track Track? @relation(fields: [trackId], references: [id], onDelete: SetNull)
+
+  @@map("payments")
+}
