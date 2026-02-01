@@ -348,5 +348,3 @@ npx prisma db push
 ## 📄 Лицензия
 
 MIT License
-#   a r t i s t  
- 
