@@ -10,7 +10,10 @@ async function handler(req: AuthenticatedRequest, res: VercelResponse) {
   }
 
   const { path } = req.query
-  const route = Array.isArray(path) ? path.join('/') : path || ''
+  // Исправление: правильно обрабатываем path
+  const route = Array.isArray(path) ? path[0] : path || ''
+  
+  console.log('User API route:', route, 'path:', path) // Добавьте для отладки
 
   try {
     // PROFILE
