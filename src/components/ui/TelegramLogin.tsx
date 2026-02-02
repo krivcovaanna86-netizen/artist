@@ -11,8 +11,7 @@ interface TelegramUser {
   hash: string
 }
 
-// Get bot username from environment or use a placeholder
-const BOT_USERNAME = import.meta.env.VITE_TELEGRAM_BOT_USERNAME || 'your_bot'
+const BOT_USERNAME = 'artist_wth_bot'
 
 export function TelegramLogin() {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -20,18 +19,12 @@ export function TelegramLogin() {
   const { setTelegramAuthUser, fetchUser, isLoading } = useAuthStore()
 
   useEffect(() => {
-    // Create callback for Telegram Login Widget
     ;(window as any).onTelegramAuth = async (user: TelegramUser) => {
       console.log('[TelegramLogin] Auth callback received:', user)
       try {
-        // Store auth data in localStorage for API requests
         const authData = JSON.stringify(user)
         localStorage.setItem('telegram_auth', authData)
-        
-        // Update store with user data
         setTelegramAuthUser(user)
-        
-        // Fetch user profile from API
         await fetchUser()
       } catch (err) {
         console.error('[TelegramLogin] Auth error:', err)
@@ -39,8 +32,7 @@ export function TelegramLogin() {
       }
     }
 
-    // Load Telegram Widget script
-    if (containerRef.current && BOT_USERNAME !== 'your_bot') {
+    if (containerRef.current) {
       const script = document.createElement('script')
       script.src = 'https://telegram.org/js/telegram-widget.js?22'
       script.setAttribute('data-telegram-login', BOT_USERNAME)
@@ -60,24 +52,14 @@ export function TelegramLogin() {
 
   return (
     <div className="flex flex-col items-center gap-4">
-      {/* Telegram Widget Container */}
-      <div ref={containerRef} className="min-h-[40px]">
-        {BOT_USERNAME === 'your_bot' && (
-          <div className="text-sm text-tg-hint text-center p-4 bg-tg-secondary-bg rounded-xl">
-            <p>Telegram Login Widget не настроен.</p>
-            <p className="mt-2 text-xs">Установите VITE_TELEGRAM_BOT_USERNAME в .env</p>
-          </div>
-        )}
-      </div>
+      <div ref={containerRef} className="min-h-[40px]" />
 
-      {/* Error Message */}
       {error && (
         <div className="text-red-500 text-sm text-center">
           {error}
         </div>
       )}
 
-      {/* Loading State */}
       {isLoading && (
         <div className="flex items-center gap-2 text-tg-hint">
           <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
@@ -88,7 +70,6 @@ export function TelegramLogin() {
         </div>
       )}
 
-      {/* Manual Link to Bot */}
       <div className="text-center">
         <p className="text-xs text-tg-hint mb-2">
           Или откройте бота напрямую:

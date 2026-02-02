@@ -38,21 +38,18 @@ const addLog = (type: LogEntry['type'], ...args: any[]) => {
     id: ++logId,
     timestamp: new Date(),
     type,
-    message: message.slice(0, 1000), // Increased limit
+    message: message.slice(0, 1000),
   }
 
   logs.push(entry)
   
-  // Keep only last 200 logs
   while (logs.length > 200) {
     logs.shift()
   }
 
-  // Notify listeners
   listeners.forEach(listener => listener([...logs]))
 }
 
-// Install log interceptors (only once)
 let interceptorsInstalled = false
 
 export function installLogInterceptors() {
@@ -79,7 +76,6 @@ export function installLogInterceptors() {
     originalConsole.info(...args)
   }
 
-  // Log initial message
   addLog('info', '🔍 Debug panel initialized - tap 🔍 button to open')
 }
 
@@ -93,7 +89,6 @@ export function DebugPanel() {
   const { theme, cycleTheme, resolvedTheme } = useTheme()
 
   useEffect(() => {
-    // Subscribe to log updates
     const listener = (newLogs: LogEntry[]) => {
       setLogEntries(newLogs)
     }
@@ -105,7 +100,6 @@ export function DebugPanel() {
   }, [])
 
   useEffect(() => {
-    // Auto scroll to bottom when new logs arrive
     if (autoScroll && logsEndRef.current && !isMinimized && isOpen) {
       logsEndRef.current.scrollIntoView({ behavior: 'smooth' })
     }
@@ -163,7 +157,6 @@ export function DebugPanel() {
     }
   }
 
-  // Floating button to open panel
   if (!isOpen) {
     return (
       <button
@@ -194,7 +187,6 @@ export function DebugPanel() {
           : 'bottom-4 left-2 right-2 h-[50vh] min-h-[300px] max-h-[500px] rounded-xl lg:left-auto lg:right-4 lg:w-[600px]'
       }`}
     >
-      {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700 bg-gray-800 rounded-t-xl">
         <div className="flex items-center gap-2">
           <span>🔍</span>
@@ -209,7 +201,6 @@ export function DebugPanel() {
         <div className="flex items-center gap-1">
           {!isMinimized && (
             <>
-              {/* Theme Toggle */}
               <button
                 onClick={cycleTheme}
                 className="p-1.5 hover:bg-gray-700 rounded text-sm"
@@ -218,7 +209,6 @@ export function DebugPanel() {
                 {getThemeIcon()}
               </button>
               
-              {/* Filter */}
               <select
                 value={filter}
                 onChange={(e) => setFilter(e.target.value as any)}
@@ -230,7 +220,6 @@ export function DebugPanel() {
                 <option value="api">API</option>
               </select>
 
-              {/* Auto scroll */}
               <button
                 onClick={() => setAutoScroll(!autoScroll)}
                 className={`text-xs px-2 py-1 rounded ${
@@ -241,7 +230,6 @@ export function DebugPanel() {
                 ⬇️
               </button>
 
-              {/* Copy */}
               <button
                 onClick={copyLogs}
                 className="text-xs px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded"
@@ -250,7 +238,6 @@ export function DebugPanel() {
                 📋
               </button>
 
-              {/* Clear */}
               <button
                 onClick={clearLogs}
                 className="text-xs px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded"
@@ -261,7 +248,6 @@ export function DebugPanel() {
             </>
           )}
           
-          {/* Minimize/Expand */}
           <button
             onClick={() => setIsMinimized(!isMinimized)}
             className="p-1.5 hover:bg-gray-700 rounded"
@@ -270,7 +256,6 @@ export function DebugPanel() {
             {isMinimized ? '⬆️' : '⬇️'}
           </button>
           
-          {/* Close */}
           <button
             onClick={() => setIsOpen(false)}
             className="p-1.5 hover:bg-gray-700 rounded"
@@ -281,14 +266,13 @@ export function DebugPanel() {
         </div>
       </div>
 
-      {/* System Info Bar */}
       {!isMinimized && (
         <div className="flex items-center gap-3 px-3 py-1.5 bg-gray-800/50 text-xs text-gray-400 border-b border-gray-700/50">
           <span>🌐 {window.location.hostname}</span>
-          <span>📱 {window.Telegram?.WebApp ? 'Telegram' : 'Browser'}</span>
+          <span>📱 {(window as any).Telegram?.WebApp ? 'Telegram' : 'Browser'}</span>
           <span>{getThemeIcon()} {resolvedTheme}</span>
           <span>🔐 {
-            window.Telegram?.WebApp?.initData ? 'TG App' :
+            (window as any).Telegram?.WebApp?.initData ? 'TG App' :
             localStorage.getItem('telegram_auth') ? 'TG Login' :
             localStorage.getItem('devMode') === 'true' ? 'Dev Mode' :
             'No Auth'
@@ -296,7 +280,6 @@ export function DebugPanel() {
         </div>
       )}
 
-      {/* Logs */}
       {!isMinimized && (
         <div className="h-[calc(100%-80px)] overflow-y-auto p-2 font-mono text-xs">
           {filteredLogs.length === 0 ? (
@@ -323,8 +306,7 @@ export function DebugPanel() {
                       {log.timestamp.toLocaleTimeString('ru-RU', { 
                         hour: '2-digit', 
                         minute: '2-digit', 
-                        second: '2-digit',
-                        fractionalSecondDigits: 2
+                        second: '2-digit'
                       })}
                     </span>
                     <span className={`${getTypeColor(log.type)} break-all whitespace-pre-wrap leading-relaxed`}>
