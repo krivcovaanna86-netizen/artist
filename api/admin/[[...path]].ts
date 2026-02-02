@@ -31,6 +31,8 @@ async function handler(req: AuthenticatedRequest, res: VercelResponse) {
     if (route === 'upload-url' && method === 'POST') {
       const { fileName, fileType, bucket, filename, type } = req.body
       
+      console.log('[Admin API] upload-url request:', { fileName, fileType, bucket, filename, type })
+      
       // Support both old (fileName/fileType/bucket) and new (filename/type) formats
       const actualFileName = fileName || filename
       const actualBucket = bucket || (type === 'track' ? 'tracks' : type === 'cover' ? 'covers' : null)
@@ -40,7 +42,16 @@ async function handler(req: AuthenticatedRequest, res: VercelResponse) {
       }
       
       const bucketName = actualBucket === 'tracks' ? BUCKETS.TRACKS : BUCKETS.COVERS
-      const filePath = `${Date.now()}-${actualFileName}`
+      
+      // Sanitize filename: remove non-ASCII characters, replace spaces with underscores
+      const ext = actualFileName.split('.').pop() || ''
+      const nameWithoutExt = actualFileName.slice(0, actualFileName.lastIndexOf('.') || actualFileName.length)
+      
+      // Generate safe filename with UUID to ensure uniqueness and avoid encoding issues
+      const safeFileName = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${ext}`
+      const filePath = safeFileName
+      
+      console.log('[Admin API] Generated safe filename:', filePath, 'from:', actualFileName)
       
       const { data, error } = await supabaseAdmin.storage.from(bucketName).createSignedUploadUrl(filePath)
       if (error) throw error
