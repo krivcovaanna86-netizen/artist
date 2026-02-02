@@ -372,7 +372,7 @@ button:not(:disabled):active {
 @media (min-width: 1024px) {
   .admin-layout {
     display: grid;
-    grid-template-columns: 260px 1fr;
+    grid-template-columns: 280px 1fr;
     min-height: 100vh;
   }
 
@@ -385,6 +385,18 @@ button:not(:disabled):active {
 
   .admin-content {
     padding: 32px;
+    max-width: 1400px;
+  }
+}
+
+/* Large desktop admin */
+@media (min-width: 1440px) {
+  .admin-layout {
+    grid-template-columns: 300px 1fr;
+  }
+  
+  .admin-content {
+    padding: 40px;
   }
 }
 
@@ -401,4 +413,65 @@ button:not(:disabled):active {
   .admin-content {
     padding-bottom: 80px;
   }
+}
+
+/* Desktop card grid improvements */
+@media (min-width: 768px) {
+  .desktop-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 24px;
+  }
+}
+
+@media (min-width: 1280px) {
+  .desktop-card-grid {
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  }
+}
+
+/* Admin stats grid */
+@media (min-width: 768px) {
+  .admin-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .admin-stats-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+  }
+}
+
+/* Admin users grid */
+@media (min-width: 1024px) {
+  .admin-users-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+}
+
+@media (min-width: 1440px) {
+  .admin-users-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Scrollbar hide utility */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Prevent text selection on buttons */
+button {
+  user-select: none;
 }

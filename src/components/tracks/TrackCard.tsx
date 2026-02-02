@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { type Track } from '../../lib/api/client'
 import { usePlayerStore } from '../../stores/playerStore'
 import { formatDuration, formatPrice } from '../../lib/utils/format'
 import { useTelegramWebApp } from '../../lib/hooks/useTelegramWebApp'
+import { LimitExceededModal } from '../ui/LimitExceededModal'
 
 interface TrackCardProps {
   track: Track
@@ -14,7 +16,8 @@ interface TrackCardProps {
 export function TrackCard({ track, isPurchased, remainingPlays, variant = 'list' }: TrackCardProps) {
   const navigate = useNavigate()
   const { hapticFeedback } = useTelegramWebApp()
-  const { currentTrack, isPlaying, isLoading, loadTrack, toggle } = usePlayerStore()
+  const { currentTrack, isPlaying, isLoading, loadTrack, toggle, playPermission } = usePlayerStore()
+  const [showLimitModal, setShowLimitModal] = useState(false)
 
   const isCurrentTrack = currentTrack?.id === track.id
   const isCurrentPlaying = isCurrentTrack && isPlaying
@@ -29,6 +32,13 @@ export function TrackCard({ track, isPurchased, remainingPlays, variant = 'list'
       const success = await loadTrack(track)
       if (success) {
         usePlayerStore.getState().play()
+      } else {
+        // Check if limit was exceeded
+        const permission = usePlayerStore.getState().playPermission
+        if (permission && permission.reason === 'limit_exceeded') {
+          setShowLimitModal(true)
+          hapticFeedback('error')
+        }
       }
     }
   }
@@ -219,6 +229,14 @@ export function TrackCard({ track, isPurchased, remainingPlays, variant = 'list'
 
       {/* Play button */}
       <PlayButton />
+
+      {/* Limit exceeded modal */}
+      <LimitExceededModal
+        isOpen={showLimitModal}
+        onClose={() => setShowLimitModal(false)}
+        trackTitle={track.title}
+        trackArtist={track.artist}
+      />
     </div>
   )
 }

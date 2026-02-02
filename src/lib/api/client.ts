@@ -256,13 +256,13 @@ export async function getStreamUrl(trackId: string) {
 }
 
 // Payments
-export async function createPayment(type: 'subscription' | 'track', trackId?: string) {
+export async function createPayment(type: 'subscription' | 'track', trackId?: string, enableAutoRenewal?: boolean) {
   const { data } = await api.post<{
     paymentId: string
     paymentUrl: string
     amount: number
     description: string
-  }>('/payments/create', { type, trackId })
+  }>('/payments/create', { type, trackId, enableAutoRenewal })
   return data
 }
 

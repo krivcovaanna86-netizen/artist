@@ -10,6 +10,7 @@ import { formatPrice, formatDate } from '../../lib/utils/format'
 export default function SubscriptionPage() {
   const { hapticFeedback, showAlert } = useTelegramWebApp()
   const [isProcessing, setIsProcessing] = useState(false)
+  const [enableAutoRenewal, setEnableAutoRenewal] = useState(true) // По умолчанию включено
 
   const { data: subscription, isLoading } = useQuery({
     queryKey: ['subscription'],
@@ -21,7 +22,7 @@ export default function SubscriptionPage() {
     setIsProcessing(true)
 
     try {
-      const payment = await createPayment('subscription')
+      const payment = await createPayment('subscription', undefined, enableAutoRenewal)
       
       if (payment.paymentUrl) {
         window.location.href = payment.paymentUrl
@@ -122,6 +123,26 @@ export default function SubscriptionPage() {
           )}
         </div>
 
+        {/* Auto-renewal toggle */}
+        <div className="flex items-center justify-between p-3 bg-tg-secondary-bg rounded-xl mb-4">
+          <div className="flex-1">
+            <p className="font-medium text-tg-text text-sm">Автопродление</p>
+            <p className="text-xs text-tg-hint">Карта будет сохранена для автоматического списания</p>
+          </div>
+          <button
+            onClick={() => setEnableAutoRenewal(!enableAutoRenewal)}
+            className={`relative w-12 h-7 rounded-full transition-colors ${
+              enableAutoRenewal ? 'bg-green-500' : 'bg-tg-hint'
+            }`}
+          >
+            <span
+              className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform ${
+                enableAutoRenewal ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+
         <Button
           fullWidth
           size="lg"
@@ -133,7 +154,10 @@ export default function SubscriptionPage() {
         </Button>
 
         <p className="text-xs text-tg-hint text-center mt-3">
-          Подписка активируется сразу после оплаты
+          {enableAutoRenewal 
+            ? 'Подписка будет автоматически продлеваться каждый месяц'
+            : 'Подписка активируется сразу после оплаты'
+          }
         </p>
       </div>
 
@@ -177,7 +201,10 @@ export default function SubscriptionPage() {
               </svg>
             </summary>
             <p className="px-4 pb-4 text-sm text-tg-hint">
-              Подписка не продлевается автоматически. По истечении срока действия вам нужно будет оформить её заново.
+              {enableAutoRenewal 
+                ? 'Вы можете отключить автопродление в настройках профиля в любое время до окончания текущего периода.'
+                : 'Подписка не продлевается автоматически. По истечении срока действия вам нужно будет оформить её заново.'
+              }
             </p>
           </details>
           <details className="group">

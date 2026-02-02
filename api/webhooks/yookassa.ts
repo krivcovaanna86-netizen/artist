@@ -74,6 +74,11 @@ async function handlePaymentSucceeded(paymentId: string, providerData: any) {
     const now = new Date()
     const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000) // 30 days
 
+    // Проверяем, включено ли автопродление
+    const metadata = providerData.metadata || {}
+    const enableAutoRenewal = metadata.enableAutoRenewal === 'true'
+    const isRecurring = enableAutoRenewal && providerData.payment_method?.saved
+
     await prisma.subscription.create({
       data: {
         userId: payment.userId,
@@ -81,6 +86,7 @@ async function handlePaymentSucceeded(paymentId: string, providerData: any) {
         paymentId: payment.providerPaymentId,
         startedAt: now,
         expiresAt,
+        isRecurring,
       },
     })
 
@@ -96,9 +102,21 @@ async function handlePaymentSucceeded(paymentId: string, providerData: any) {
         ? new Date(currentExpiry.getTime() + 30 * 24 * 60 * 60 * 1000)
         : expiresAt
 
+    // Обновляем данные пользователя, включая способ оплаты для автопродления
+    const updateData: any = { subscriptionUntil: newExpiry }
+    
+    if (isRecurring && providerData.payment_method?.id) {
+      updateData.autoRenewal = true
+      updateData.paymentMethodId = providerData.payment_method.id
+      if (providerData.payment_method.card?.last4) {
+        updateData.paymentMethodLast4 = providerData.payment_method.card.last4
+      }
+      console.log(`Auto-renewal enabled for user ${payment.userId}, payment method saved`)
+    }
+
     await prisma.user.update({
       where: { id: payment.userId },
-      data: { subscriptionUntil: newExpiry },
+      data: updateData,
     })
 
     console.log(`Subscription activated for user ${payment.userId} until ${newExpiry}`)

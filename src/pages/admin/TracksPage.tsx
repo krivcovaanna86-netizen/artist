@@ -39,6 +39,7 @@ export default function AdminTracksPage() {
     price: '',
     categoryIds: [] as string[],
     isPublished: false,
+    duration: 0,
   })
   const [audioFile, setAudioFile] = useState<File | null>(null)
   const [coverFile, setCoverFile] = useState<File | null>(null)
@@ -114,6 +115,7 @@ export default function AdminTracksPage() {
         price: String(track.price / 100),
         categoryIds: track.categories.map((c) => c.id),
         isPublished: track.isPublished,
+        duration: track.duration,
       })
       setUploadedAudioPath(track.filePath)
       setUploadedCoverPath(track.coverPath || '')
@@ -126,6 +128,7 @@ export default function AdminTracksPage() {
         price: '',
         categoryIds: [],
         isPublished: false,
+        duration: 0,
       })
       setUploadedAudioPath('')
       setUploadedCoverPath('')
@@ -174,6 +177,31 @@ export default function AdminTracksPage() {
     }
   }
 
+  // Extract audio duration from file
+  const extractAudioDuration = useCallback((file: File): Promise<number> => {
+    return new Promise((resolve) => {
+      const audio = new Audio()
+      const url = URL.createObjectURL(file)
+      
+      audio.preload = 'metadata'
+      
+      audio.onloadedmetadata = () => {
+        URL.revokeObjectURL(url)
+        const duration = Math.floor(audio.duration)
+        console.log('[TracksPage] Audio duration:', duration, 'seconds')
+        resolve(duration)
+      }
+      
+      audio.onerror = () => {
+        URL.revokeObjectURL(url)
+        console.error('[TracksPage] Error loading audio metadata')
+        resolve(0)
+      }
+      
+      audio.src = url
+    })
+  }, [])
+
   // Обработка выбора аудиофайла с автоматическим извлечением обложки
   const handleAudioFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -186,6 +214,10 @@ export default function AdminTracksPage() {
     })
     
     setAudioFile(file)
+    
+    // Extract duration from audio file
+    const duration = await extractAudioDuration(file)
+    setFormData(prev => ({ ...prev, duration }))
     
     // Попробовать извлечь обложку из файла
     if (!coverFile && !uploadedCoverPath) {
@@ -212,7 +244,7 @@ export default function AdminTracksPage() {
         setIsExtractingCover(false)
       }
     }
-  }, [coverFile, uploadedCoverPath, hapticFeedback])
+  }, [coverFile, uploadedCoverPath, hapticFeedback, extractAudioDuration])
 
   // Обработка выбора файла обложки
   const handleCoverFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -278,6 +310,7 @@ export default function AdminTracksPage() {
       const trackData = {
         title: formData.title,
         artist: formData.artist,
+        duration: formData.duration,
         price: Math.round(parseFloat(formData.price || '0') * 100),
         filePath: audioPath,
         coverPath: coverPath || undefined,

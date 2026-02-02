@@ -5,6 +5,14 @@ interface CreatePaymentParams {
   description: string
   returnUrl: string
   metadata?: Record<string, string>
+  savePaymentMethod?: boolean // Для рекуррентных платежей
+}
+
+interface CreateRecurringPaymentParams {
+  amount: number // в копейках
+  description: string
+  paymentMethodId: string // ID сохранённого способа оплаты
+  metadata?: Record<string, string>
 }
 
 interface YooKassaPayment {
@@ -17,6 +25,18 @@ interface YooKassaPayment {
   confirmation?: {
     type: string
     confirmation_url: string
+  }
+  payment_method?: {
+    type: string
+    id: string
+    saved: boolean
+    card?: {
+      first6: string
+      last4: string
+      expiry_month: string
+      expiry_year: string
+      card_type: string
+    }
   }
   created_at: string
   description: string
@@ -41,6 +61,48 @@ function getAuthHeader(): string {
 export async function createPayment(params: CreatePaymentParams): Promise<YooKassaPayment> {
   const idempotenceKey = crypto.randomUUID()
 
+  const requestBody: any = {
+    amount: {
+      value: (params.amount / 100).toFixed(2),
+      currency: 'RUB',
+    },
+    confirmation: {
+      type: 'redirect',
+      return_url: params.returnUrl,
+    },
+    capture: true,
+    description: params.description,
+    metadata: params.metadata,
+  }
+
+  // Для подписки - сохраняем способ оплаты для автопродления
+  if (params.savePaymentMethod) {
+    requestBody.save_payment_method = true
+  }
+
+  const response = await fetch(`${YOOKASSA_API_URL}/payments`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': getAuthHeader(),
+      'Idempotence-Key': idempotenceKey,
+    },
+    body: JSON.stringify(requestBody),
+  })
+
+  if (!response.ok) {
+    const error = await response.text()
+    console.error('YooKassa error:', error)
+    throw new Error(`YooKassa API error: ${response.status}`)
+  }
+
+  return response.json()
+}
+
+// Создание автоматического платежа (для автопродления подписки)
+export async function createRecurringPayment(params: CreateRecurringPaymentParams): Promise<YooKassaPayment> {
+  const idempotenceKey = crypto.randomUUID()
+
   const response = await fetch(`${YOOKASSA_API_URL}/payments`, {
     method: 'POST',
     headers: {
@@ -53,10 +115,7 @@ export async function createPayment(params: CreatePaymentParams): Promise<YooKas
         value: (params.amount / 100).toFixed(2),
         currency: 'RUB',
       },
-      confirmation: {
-        type: 'redirect',
-        return_url: params.returnUrl,
-      },
+      payment_method_id: params.paymentMethodId,
       capture: true,
       description: params.description,
       metadata: params.metadata,
@@ -65,7 +124,7 @@ export async function createPayment(params: CreatePaymentParams): Promise<YooKas
 
   if (!response.ok) {
     const error = await response.text()
-    console.error('YooKassa error:', error)
+    console.error('YooKassa recurring payment error:', error)
     throw new Error(`YooKassa API error: ${response.status}`)
   }
 

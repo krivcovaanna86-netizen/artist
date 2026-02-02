@@ -11,7 +11,7 @@ async function handler(req: AuthenticatedRequest, res: VercelResponse) {
   }
 
   try {
-    const { type, trackId } = req.body
+    const { type, trackId, enableAutoRenewal } = req.body
 
     if (!type || !['subscription', 'track'].includes(type)) {
       return res.status(400).json({ error: 'Invalid payment type' })
@@ -24,10 +24,13 @@ async function handler(req: AuthenticatedRequest, res: VercelResponse) {
     let amount: number
     let description: string
     let track = null
+    let savePaymentMethod = false
 
     if (type === 'subscription') {
       amount = settings.subscriptionPrice
       description = 'Подписка на музыкальный сервис (1 месяц)'
+      // Для подписки с автопродлением сохраняем способ оплаты
+      savePaymentMethod = enableAutoRenewal === true
     } else {
       if (!trackId) {
         return res.status(400).json({ error: 'Track ID required for track purchase' })
@@ -75,11 +78,13 @@ async function handler(req: AuthenticatedRequest, res: VercelResponse) {
       amount,
       description,
       returnUrl: `${appUrl}/payment/status?id=${payment.id}`,
+      savePaymentMethod, // Для автопродления подписки
       metadata: {
         paymentId: payment.id,
         userId: user.id,
         type,
         trackId: trackId || '',
+        enableAutoRenewal: savePaymentMethod ? 'true' : 'false',
       },
     })
 

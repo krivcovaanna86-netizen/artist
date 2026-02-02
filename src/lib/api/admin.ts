@@ -426,6 +426,15 @@ export async function getChartData(days = 30) {
   return data
 }
 
+// Users - Update
+export async function updateUser(id: string, data: {
+  isAdmin?: boolean
+  subscriptionUntil?: string | null
+}) {
+  const response = await api.put<AdminUser>(`/users/${id}`, data)
+  return response.data
+}
+
 // Settings
 export async function getSettings() {
   const { data } = await api.get<{ settings: AppSettings }>('/settings')

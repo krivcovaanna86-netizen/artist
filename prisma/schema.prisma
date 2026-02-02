@@ -10,17 +10,20 @@ datasource db {
 
 // Пользователи
 model User {
-  id                String    @id @default(uuid())
-  telegramId        BigInt    @unique @map("telegram_id")
-  username          String?   @db.VarChar(255)
-  firstName         String    @map("first_name") @db.VarChar(255)
-  lastName          String?   @map("last_name") @db.VarChar(255)
-  photoUrl          String?   @map("photo_url") @db.VarChar(500)
-  isAdmin           Boolean   @default(false) @map("is_admin")
-  subscriptionUntil DateTime? @map("subscription_until")
-  platform          String    @default("telegram") @db.VarChar(20)
-  createdAt         DateTime  @default(now()) @map("created_at")
-  updatedAt         DateTime  @updatedAt @map("updated_at")
+  id                  String    @id @default(uuid())
+  telegramId          BigInt    @unique @map("telegram_id")
+  username            String?   @db.VarChar(255)
+  firstName           String    @map("first_name") @db.VarChar(255)
+  lastName            String?   @map("last_name") @db.VarChar(255)
+  photoUrl            String?   @map("photo_url") @db.VarChar(500)
+  isAdmin             Boolean   @default(false) @map("is_admin")
+  subscriptionUntil   DateTime? @map("subscription_until")
+  autoRenewal         Boolean   @default(false) @map("auto_renewal") // Автопродление включено
+  paymentMethodId     String?   @map("payment_method_id") @db.VarChar(255) // Сохранённый способ оплаты ЮKassa
+  paymentMethodLast4  String?   @map("payment_method_last4") @db.VarChar(4) // Последние 4 цифры карты
+  platform            String    @default("telegram") @db.VarChar(20)
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
 
   purchases       Purchase[]
   subscriptions   Subscription[]
@@ -97,13 +100,14 @@ model Purchase {
 
 // Подписки
 model Subscription {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  price     Int
-  paymentId String?  @map("payment_id") @db.VarChar(255)
-  startedAt DateTime @default(now()) @map("started_at")
-  expiresAt DateTime @map("expires_at")
-  createdAt DateTime @default(now()) @map("created_at")
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  price       Int
+  paymentId   String?  @map("payment_id") @db.VarChar(255)
+  startedAt   DateTime @default(now()) @map("started_at")
+  expiresAt   DateTime @map("expires_at")
+  isRecurring Boolean  @default(false) @map("is_recurring") // Это автопродление?
+  createdAt   DateTime @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

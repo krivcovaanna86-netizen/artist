@@ -193,13 +193,18 @@ export default function TrackPage() {
         {/* Actions */}
         <div className="mt-6 space-y-3">
           {!isPurchased && track.price > 0 && (
-            <Button
-              fullWidth
-              onClick={handleBuy}
-              loading={isProcessingPayment}
-            >
-              Купить за {formatPrice(track.price)}
-            </Button>
+            <>
+              <Button
+                fullWidth
+                onClick={handleBuy}
+                loading={isProcessingPayment}
+              >
+                Купить за {formatPrice(track.price)}
+              </Button>
+              <p className="text-xs text-tg-hint text-center">
+                После покупки трек будет отправлен вам в Telegram бота
+              </p>
+            </>
           )}
 
           {isPurchased && (
