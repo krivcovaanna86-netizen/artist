@@ -1,6 +1,7 @@
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../stores/authStore'
 import { usePlayerStore } from '../../stores/playerStore'
+import { ThemeToggle } from '../ui/ThemeToggle'
 
 export default function AppLayout() {
   const location = useLocation()
@@ -51,32 +52,113 @@ export default function AppLayout() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      {/* Main content */}
-      <main className={`flex-1 ${currentTrack ? 'pb-24' : 'pb-20'}`}>
-        <Outlet />
-      </main>
+    <div className="min-h-screen flex flex-col lg:flex-row">
+      {/* Desktop sidebar - hidden on mobile */}
+      <aside className="hidden lg:flex flex-col w-64 xl:w-72 bg-tg-secondary-bg border-r border-tg-hint/20 sticky top-0 h-screen">
+        {/* Logo/Title */}
+        <div className="p-6 border-b border-tg-hint/20">
+          <h1 className="text-xl font-bold text-tg-text">🎵 Music App</h1>
+          <p className="text-sm text-tg-hint mt-1">Слушай и скачивай</p>
+        </div>
 
-      {/* Bottom navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-tg-section-bg border-t border-tg-secondary-bg safe-bottom z-30"
-           style={{ bottom: currentTrack ? '72px' : '0' }}>
-        <div className="flex justify-around items-center h-16">
+        {/* Navigation */}
+        <nav className="flex-1 p-4 space-y-2">
           {navItems.map((item) => (
             <NavLink
               key={item.path}
               to={item.path}
               className={({ isActive }) =>
-                `flex flex-col items-center justify-center w-full h-full transition-colors ${
-                  isActive ? 'text-tg-button' : 'text-tg-hint'
+                `flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                  isActive 
+                    ? 'bg-tg-button text-tg-button-text' 
+                    : 'text-tg-text hover:bg-tg-bg'
                 }`
               }
             >
               {item.icon}
-              <span className="text-xs mt-1">{item.label}</span>
+              <span className="font-medium">{item.label}</span>
             </NavLink>
           ))}
+        </nav>
+
+        {/* Theme toggle & user info */}
+        <div className="p-4 border-t border-tg-hint/20">
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-sm text-tg-hint">Тема</span>
+            <ThemeToggle />
+          </div>
+          {user && (
+            <div className="flex items-center gap-3 p-3 bg-tg-bg rounded-xl">
+              <div className="w-10 h-10 rounded-full bg-tg-button flex items-center justify-center text-tg-button-text font-bold">
+                {user.firstName?.charAt(0) || 'U'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-tg-text truncate">
+                  {user.firstName} {user.lastName || ''}
+                </p>
+                <p className="text-xs text-tg-hint truncate">
+                  {user.hasActiveSubscription ? '⭐ Подписка' : 'Без подписки'}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
-      </nav>
+      </aside>
+
+      {/* Main content area */}
+      <div className="flex-1 flex flex-col min-h-screen lg:ml-0">
+        {/* Desktop header - hidden on mobile */}
+        <header className="hidden lg:flex items-center justify-between px-8 py-4 bg-tg-bg border-b border-tg-hint/10 sticky top-0 z-20">
+          <div className="flex items-center gap-4">
+            <h2 className="text-lg font-semibold text-tg-text">
+              {location.pathname === '/' && 'Каталог треков'}
+              {location.pathname === '/subscription' && 'Подписка'}
+              {location.pathname === '/profile' && 'Профиль'}
+              {location.pathname.startsWith('/track/') && 'Трек'}
+              {location.pathname.startsWith('/admin') && 'Админ-панель'}
+            </h2>
+          </div>
+          <div className="flex items-center gap-4">
+            <ThemeToggle showLabel className="lg:hidden xl:flex" />
+          </div>
+        </header>
+
+        {/* Mobile header with theme toggle */}
+        <header className="flex lg:hidden items-center justify-between px-4 py-3 bg-tg-bg border-b border-tg-hint/10 sticky top-0 z-20">
+          <h1 className="text-lg font-semibold text-tg-text">🎵 Music</h1>
+          <ThemeToggle />
+        </header>
+
+        {/* Main content */}
+        <main className={`flex-1 ${currentTrack ? 'pb-36 lg:pb-28' : 'pb-20 lg:pb-8'}`}>
+          <div className="lg:max-w-6xl lg:mx-auto lg:px-8 lg:py-6">
+            <Outlet />
+          </div>
+        </main>
+
+        {/* Mobile bottom navigation */}
+        <nav 
+          className="lg:hidden fixed bottom-0 left-0 right-0 bg-tg-section-bg border-t border-tg-secondary-bg safe-bottom z-30"
+          style={{ bottom: currentTrack ? '72px' : '0' }}
+        >
+          <div className="flex justify-around items-center h-16">
+            {navItems.map((item) => (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                className={({ isActive }) =>
+                  `flex flex-col items-center justify-center w-full h-full transition-colors ${
+                    isActive ? 'text-tg-button' : 'text-tg-hint'
+                  }`
+                }
+              >
+                {item.icon}
+                <span className="text-xs mt-1">{item.label}</span>
+              </NavLink>
+            ))}
+          </div>
+        </nav>
+      </div>
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   getAdminTracks,
@@ -18,6 +18,7 @@ import { TrackListSkeleton } from '../../components/ui/Skeleton'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { useTelegramWebApp } from '../../lib/hooks/useTelegramWebApp'
 import { formatPrice, formatNumber, formatDuration } from '../../lib/utils/format'
+import { extractCoverFromAudioFile, blobToFile, blobToDataUrl } from '../../lib/utils/coverExtractor'
 
 export default function AdminTracksPage() {
   const queryClient = useQueryClient()
@@ -27,6 +28,8 @@ export default function AdminTracksPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingTrack, setEditingTrack] = useState<AdminTrack | null>(null)
   const [isUploading, setIsUploading] = useState(false)
+  const [isExtractingCover, setIsExtractingCover] = useState(false)
+  const [coverPreview, setCoverPreview] = useState<string | null>(null)
 
   // Form state
   const [formData, setFormData] = useState({
@@ -100,6 +103,7 @@ export default function AdminTracksPage() {
       })
       setUploadedAudioPath(track.filePath)
       setUploadedCoverPath(track.coverPath || '')
+      setCoverPreview(track.coverUrl)
     } else {
       setEditingTrack(null)
       setFormData({
@@ -111,6 +115,7 @@ export default function AdminTracksPage() {
       })
       setUploadedAudioPath('')
       setUploadedCoverPath('')
+      setCoverPreview(null)
     }
     setAudioFile(null)
     setCoverFile(null)
@@ -124,6 +129,7 @@ export default function AdminTracksPage() {
     setCoverFile(null)
     setUploadedAudioPath('')
     setUploadedCoverPath('')
+    setCoverPreview(null)
   }
 
   const handleFileUpload = async (file: File, type: 'track' | 'cover') => {
@@ -136,6 +142,48 @@ export default function AdminTracksPage() {
       throw error
     }
   }
+
+  // Обработка выбора аудиофайла с автоматическим извлечением обложки
+  const handleAudioFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    
+    setAudioFile(file)
+    
+    // Попробовать извлечь обложку из файла
+    if (!coverFile && !uploadedCoverPath) {
+      setIsExtractingCover(true)
+      try {
+        const coverBlob = await extractCoverFromAudioFile(file)
+        if (coverBlob) {
+          const coverFileFromBlob = blobToFile(coverBlob, `cover-${Date.now()}.jpg`)
+          setCoverFile(coverFileFromBlob)
+          
+          // Показать превью
+          const previewUrl = await blobToDataUrl(coverBlob)
+          setCoverPreview(previewUrl)
+          
+          hapticFeedback('success')
+        }
+      } catch (error) {
+        console.error('Error extracting cover:', error)
+      } finally {
+        setIsExtractingCover(false)
+      }
+    }
+  }, [coverFile, uploadedCoverPath, hapticFeedback])
+
+  // Обработка выбора файла обложки
+  const handleCoverFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    
+    setCoverFile(file)
+    
+    // Показать превью
+    const previewUrl = await blobToDataUrl(file)
+    setCoverPreview(previewUrl)
+  }, [])
 
   const handleSubmit = async () => {
     if (!formData.title || !formData.artist) {
@@ -197,15 +245,37 @@ export default function AdminTracksPage() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <Input
           placeholder="Поиск треков..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="flex-1"
+          className="flex-1 sm:max-w-xs"
         />
         <Button onClick={() => openModal()}>+ Добавить</Button>
       </div>
+
+      {/* Stats on desktop */}
+      {tracksData && (
+        <div className="hidden lg:flex gap-4">
+          <div className="bg-tg-section-bg rounded-xl p-4 flex-1">
+            <p className="text-sm text-tg-hint">Всего треков</p>
+            <p className="text-2xl font-bold text-tg-text">{tracksData.pagination.total}</p>
+          </div>
+          <div className="bg-tg-section-bg rounded-xl p-4 flex-1">
+            <p className="text-sm text-tg-hint">Опубликовано</p>
+            <p className="text-2xl font-bold text-tg-text">
+              {tracksData.tracks.filter(t => t.isPublished).length}
+            </p>
+          </div>
+          <div className="bg-tg-section-bg rounded-xl p-4 flex-1">
+            <p className="text-sm text-tg-hint">Черновики</p>
+            <p className="text-2xl font-bold text-tg-text">
+              {tracksData.tracks.filter(t => !t.isPublished).length}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Tracks List */}
       {isLoading ? (
@@ -219,14 +289,14 @@ export default function AdminTracksPage() {
       ) : (
         <div className="bg-tg-bg rounded-xl divide-y divide-tg-secondary-bg overflow-hidden">
           {tracksData.tracks.map((track) => (
-            <div key={track.id} className="flex items-center gap-3 p-4">
+            <div key={track.id} className="flex items-center gap-3 p-4 hover:bg-tg-secondary-bg/50 transition-colors">
               {/* Cover */}
-              <div className="w-12 h-12 rounded-lg overflow-hidden bg-tg-secondary-bg flex-shrink-0">
+              <div className="w-12 h-12 lg:w-16 lg:h-16 rounded-lg overflow-hidden bg-tg-secondary-bg flex-shrink-0">
                 {track.coverUrl ? (
                   <img src={track.coverUrl} alt={track.title} className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center">
-                    <svg className="w-5 h-5 text-tg-hint" fill="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 lg:w-6 lg:h-6 text-tg-hint" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
                     </svg>
                   </div>
@@ -236,21 +306,21 @@ export default function AdminTracksPage() {
               {/* Info */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <p className="text-sm font-medium text-tg-text truncate">{track.title}</p>
+                  <p className="text-sm lg:text-base font-medium text-tg-text truncate">{track.title}</p>
                   {!track.isPublished && <Badge variant="warning" size="sm">Черновик</Badge>}
                 </div>
-                <p className="text-xs text-tg-hint truncate">{track.artist}</p>
+                <p className="text-xs lg:text-sm text-tg-hint truncate">{track.artist}</p>
                 <div className="flex items-center gap-2 text-xs text-tg-hint mt-1">
                   <span>{formatDuration(track.duration)}</span>
-                  <span>•</span>
-                  <span>{formatNumber(track.playCount)} прослушиваний</span>
-                  <span>•</span>
-                  <span>{formatPrice(track.revenue)} доход</span>
+                  <span className="hidden sm:inline">•</span>
+                  <span className="hidden sm:inline">{formatNumber(track.playCount)} прослушиваний</span>
+                  <span className="hidden md:inline">•</span>
+                  <span className="hidden md:inline">{formatPrice(track.revenue)} доход</span>
                 </div>
               </div>
 
               {/* Price */}
-              <div className="text-sm font-medium text-tg-accent">
+              <div className="hidden sm:block text-sm font-medium text-tg-accent">
                 {formatPrice(track.price)}
               </div>
 
@@ -259,6 +329,7 @@ export default function AdminTracksPage() {
                 <button
                   onClick={() => openModal(track)}
                   className="p-2 rounded-lg hover:bg-tg-secondary-bg transition-colors"
+                  title="Редактировать"
                 >
                   <svg className="w-5 h-5 text-tg-hint" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
@@ -266,7 +337,8 @@ export default function AdminTracksPage() {
                 </button>
                 <button
                   onClick={() => handleDelete(track)}
-                  className="p-2 rounded-lg hover:bg-red-100 transition-colors"
+                  className="p-2 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors"
+                  title="Удалить"
                 >
                   <svg className="w-5 h-5 text-tg-destructive" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
@@ -310,28 +382,55 @@ export default function AdminTracksPage() {
           {/* Audio file */}
           <div>
             <label className="block text-sm font-medium text-tg-text mb-1">
-              Аудиофайл (MP3)
+              Аудиофайл (MP3, M4A, MP4)
             </label>
             <input
               type="file"
-              accept=".mp3,audio/mpeg"
-              onChange={(e) => setAudioFile(e.target.files?.[0] || null)}
+              accept=".mp3,.m4a,.mp4,audio/mpeg,audio/mp4,audio/x-m4a,video/mp4"
+              onChange={handleAudioFileChange}
               className="w-full text-sm text-tg-text file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-tg-button file:text-tg-button-text hover:file:opacity-90"
             />
             {uploadedAudioPath && !audioFile && (
               <p className="text-xs text-tg-hint mt-1">Текущий файл: {uploadedAudioPath}</p>
             )}
+            {isExtractingCover && (
+              <p className="text-xs text-tg-accent mt-1 animate-pulse">⏳ Извлечение обложки из файла...</p>
+            )}
           </div>
 
-          {/* Cover file */}
+          {/* Cover file with preview */}
           <div>
             <label className="block text-sm font-medium text-tg-text mb-1">
-              Обложка (JPG/PNG)
+              Обложка (JPG/PNG) 
+              <span className="text-xs text-tg-hint ml-2">Извлекается автоматически из аудиофайла</span>
             </label>
+            
+            {/* Cover preview */}
+            {coverPreview && (
+              <div className="mb-2 relative inline-block">
+                <img 
+                  src={coverPreview} 
+                  alt="Обложка" 
+                  className="w-24 h-24 object-cover rounded-lg"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCoverFile(null)
+                    setCoverPreview(null)
+                    setUploadedCoverPath('')
+                  }}
+                  className="absolute -top-2 -right-2 w-6 h-6 bg-tg-destructive text-white rounded-full flex items-center justify-center text-xs"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+            
             <input
               type="file"
               accept=".jpg,.jpeg,.png,.webp,image/*"
-              onChange={(e) => setCoverFile(e.target.files?.[0] || null)}
+              onChange={handleCoverFileChange}
               className="w-full text-sm text-tg-text file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-tg-button file:text-tg-button-text hover:file:opacity-90"
             />
           </div>

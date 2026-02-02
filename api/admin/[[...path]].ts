@@ -1,28 +1,57 @@
-import type { VercelResponse } from '@vercel/node'
+import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { withAuth, AuthenticatedRequest, serializeUser } from '../_lib/auth'
 import prisma from '../_lib/prisma'
 import { getPublicUrl, BUCKETS, supabaseAdmin } from '../_lib/supabase'
 import { getSettings, updateSettings } from '../_lib/settings'
 
-async function handler(req: AuthenticatedRequest, res: VercelResponse) {
-  const { path } = req.query
-  const route = Array.isArray(path) ? path.join('/') : path || ''
-  const method = req.method
-
-  try {
-// UPLOAD URL
-if (route === 'upload-url' && method === 'POST') {
-  const { fileName, fileType, bucket } = req.body
-  if (!fileName || !fileType || !bucket) {
-    return res.status(400).json({ error: 'fileName, fileType, and bucket are required' })
-  }
-  const bucketName = bucket === 'tracks' ? BUCKETS.TRACKS : BUCKETS.COVERS
-  const filePath = `${Date.now()}-${fileName}`
-  const { data, error } = await supabaseAdmin.storage.from(bucketName).createSignedUploadUrl(filePath)
-  if (error) throw error
-  return res.status(200).json({ uploadUrl: data.signedUrl, filePath, token: data.token })
+// Helper to parse route from URL
+function parseRoute(url: string): string {
+  // URL like /api/admin/tracks/123 -> tracks/123
+  const match = url.match(/\/api\/admin\/?(.*)/)
+  if (!match) return ''
+  
+  // Remove query string
+  let route = match[1].split('?')[0]
+  // Remove trailing slash
+  route = route.replace(/\/$/, '')
+  
+  console.log('[Admin API] URL:', url, '-> Route:', route)
+  return route
 }
 
+async function handler(req: AuthenticatedRequest, res: VercelResponse) {
+  const url = req.url || ''
+  const route = parseRoute(url)
+  const method = req.method
+
+  console.log('[Admin API] Method:', method, 'Route:', route)
+
+  try {
+    // UPLOAD URL
+    if (route === 'upload-url' && method === 'POST') {
+      const { fileName, fileType, bucket, filename, type } = req.body
+      
+      // Support both old (fileName/fileType/bucket) and new (filename/type) formats
+      const actualFileName = fileName || filename
+      const actualBucket = bucket || (type === 'track' ? 'tracks' : type === 'cover' ? 'covers' : null)
+      
+      if (!actualFileName || !actualBucket) {
+        return res.status(400).json({ error: 'fileName/filename and bucket/type are required' })
+      }
+      
+      const bucketName = actualBucket === 'tracks' ? BUCKETS.TRACKS : BUCKETS.COVERS
+      const filePath = `${Date.now()}-${actualFileName}`
+      
+      const { data, error } = await supabaseAdmin.storage.from(bucketName).createSignedUploadUrl(filePath)
+      if (error) throw error
+      
+      return res.status(200).json({ 
+        uploadUrl: data.signedUrl, 
+        filePath,
+        path: filePath, // For compatibility
+        token: data.token 
+      })
+    }
 
     // CATEGORIES - GET ALL
     if (route === 'categories' && method === 'GET') {
@@ -67,58 +96,58 @@ if (route === 'upload-url' && method === 'POST') {
       })
     }
 
-    // CATEGORIES - GET ONE
-    if (route.match(/^categories\/[^/]+$/) && method === 'GET') {
-      const id = route.split('/')[1]
-      const category = await prisma.category.findUnique({
-        where: { id },
-        include: { _count: { select: { tracks: true } } },
-      })
-      if (!category) {
-        return res.status(404).json({ error: 'Category not found' })
-      }
-      return res.status(200).json({
-        id: category.id,
-        name: category.name,
-        slug: category.slug,
-        icon: category.icon,
-        sortOrder: category.sortOrder,
-        trackCount: category._count.tracks,
-        createdAt: category.createdAt,
-      })
-    }
-
-    // CATEGORIES - UPDATE
-    if (route.match(/^categories\/[^/]+$/) && method === 'PUT') {
-      const id = route.split('/')[1]
-      const { name, slug, icon, sortOrder } = req.body
-      if (slug) {
-        const existing = await prisma.category.findFirst({
-          where: { slug, NOT: { id } },
+    // CATEGORIES - GET ONE / UPDATE / DELETE
+    const categoryMatch = route.match(/^categories\/([^/]+)$/)
+    if (categoryMatch) {
+      const id = categoryMatch[1]
+      
+      if (method === 'GET') {
+        const category = await prisma.category.findUnique({
+          where: { id },
+          include: { _count: { select: { tracks: true } } },
         })
-        if (existing) {
-          return res.status(400).json({ error: 'Category with this slug already exists' })
+        if (!category) {
+          return res.status(404).json({ error: 'Category not found' })
         }
+        return res.status(200).json({
+          id: category.id,
+          name: category.name,
+          slug: category.slug,
+          icon: category.icon,
+          sortOrder: category.sortOrder,
+          trackCount: category._count.tracks,
+          createdAt: category.createdAt,
+        })
       }
-      const category = await prisma.category.update({
-        where: { id },
-        data: { name, slug, icon, sortOrder },
-      })
-      return res.status(200).json({
-        id: category.id,
-        name: category.name,
-        slug: category.slug,
-        icon: category.icon,
-        sortOrder: category.sortOrder,
-      })
-    }
 
-    // CATEGORIES - DELETE
-    if (route.match(/^categories\/[^/]+$/) && method === 'DELETE') {
-      const id = route.split('/')[1]
-      await prisma.trackCategory.deleteMany({ where: { categoryId: id } })
-      await prisma.category.delete({ where: { id } })
-      return res.status(200).json({ success: true })
+      if (method === 'PUT') {
+        const { name, slug, icon, sortOrder } = req.body
+        if (slug) {
+          const existing = await prisma.category.findFirst({
+            where: { slug, NOT: { id } },
+          })
+          if (existing) {
+            return res.status(400).json({ error: 'Category with this slug already exists' })
+          }
+        }
+        const category = await prisma.category.update({
+          where: { id },
+          data: { name, slug, icon, sortOrder },
+        })
+        return res.status(200).json({
+          id: category.id,
+          name: category.name,
+          slug: category.slug,
+          icon: category.icon,
+          sortOrder: category.sortOrder,
+        })
+      }
+
+      if (method === 'DELETE') {
+        await prisma.trackCategory.deleteMany({ where: { categoryId: id } })
+        await prisma.category.delete({ where: { id } })
+        return res.status(200).json({ success: true })
+      }
     }
 
     // PAYMENTS - GET ALL
@@ -494,94 +523,94 @@ if (route === 'upload-url' && method === 'POST') {
       })
     }
 
-    // TRACKS - GET ONE
-    if (route.match(/^tracks\/[^/]+$/) && method === 'GET') {
-      const id = route.split('/')[1]
-      const track = await prisma.track.findUnique({
-        where: { id },
-        include: {
-          categories: { include: { category: true } },
-          _count: { select: { purchases: true } },
-        },
-      })
-      if (!track) {
-        return res.status(404).json({ error: 'Track not found' })
-      }
-      return res.status(200).json({
-        id: track.id,
-        title: track.title,
-        artist: track.artist,
-        duration: track.duration,
-        coverUrl: track.coverPath ? getPublicUrl(BUCKETS.COVERS, track.coverPath) : null,
-        filePath: track.filePath,
-        coverPath: track.coverPath,
-        price: track.price,
-        isPublished: track.isPublished,
-        playCount: track.playCount,
-        purchaseCount: track._count.purchases,
-        categories: track.categories.map((tc) => ({
-          id: tc.category.id,
-          name: tc.category.name,
-          slug: tc.category.slug,
-          icon: tc.category.icon,
-        })),
-        createdAt: track.createdAt,
-        updatedAt: track.updatedAt,
-      })
-    }
+    // TRACKS - GET ONE / UPDATE / DELETE
+    const trackMatch = route.match(/^tracks\/([^/]+)$/)
+    if (trackMatch) {
+      const id = trackMatch[1]
 
-    // TRACKS - UPDATE
-    if (route.match(/^tracks\/[^/]+$/) && method === 'PUT') {
-      const id = route.split('/')[1]
-      const { title, artist, duration, filePath, coverPath, price, categoryIds, isPublished } = req.body
-      await prisma.trackCategory.deleteMany({ where: { trackId: id } })
-      const track = await prisma.track.update({
-        where: { id },
-        data: {
-          title,
-          artist,
-          duration,
-          filePath,
-          coverPath,
-          price,
-          isPublished,
-          categories: {
-            create: categoryIds?.map((categoryId: string) => ({
-              category: { connect: { id: categoryId } },
-            })) || [],
+      if (method === 'GET') {
+        const track = await prisma.track.findUnique({
+          where: { id },
+          include: {
+            categories: { include: { category: true } },
+            _count: { select: { purchases: true } },
           },
-        },
-        include: { categories: { include: { category: true } } },
-      })
-      return res.status(200).json({
-        id: track.id,
-        title: track.title,
-        artist: track.artist,
-        duration: track.duration,
-        coverUrl: track.coverPath ? getPublicUrl(BUCKETS.COVERS, track.coverPath) : null,
-        filePath: track.filePath,
-        coverPath: track.coverPath,
-        price: track.price,
-        isPublished: track.isPublished,
-        categories: track.categories.map((tc) => ({
-          id: tc.category.id,
-          name: tc.category.name,
-          slug: tc.category.slug,
-          icon: tc.category.icon,
-        })),
-        createdAt: track.createdAt,
-        updatedAt: track.updatedAt,
-      })
-    }
+        })
+        if (!track) {
+          return res.status(404).json({ error: 'Track not found' })
+        }
+        return res.status(200).json({
+          id: track.id,
+          title: track.title,
+          artist: track.artist,
+          duration: track.duration,
+          coverUrl: track.coverPath ? getPublicUrl(BUCKETS.COVERS, track.coverPath) : null,
+          filePath: track.filePath,
+          coverPath: track.coverPath,
+          price: track.price,
+          isPublished: track.isPublished,
+          playCount: track.playCount,
+          purchaseCount: track._count.purchases,
+          categories: track.categories.map((tc) => ({
+            id: tc.category.id,
+            name: tc.category.name,
+            slug: tc.category.slug,
+            icon: tc.category.icon,
+          })),
+          createdAt: track.createdAt,
+          updatedAt: track.updatedAt,
+        })
+      }
 
-    // TRACKS - DELETE
-    if (route.match(/^tracks\/[^/]+$/) && method === 'DELETE') {
-      const id = route.split('/')[1]
-      await prisma.trackCategory.deleteMany({ where: { trackId: id } })
-      await prisma.playHistory.deleteMany({ where: { trackId: id } })
-      await prisma.purchase.deleteMany({ where: { trackId: id } })
-      await prisma.track.delete({ where: { id } })
-      return res.status(200).json({ success: true })
+      if (method === 'PUT') {
+        const { title, artist, duration, filePath, coverPath, price, categoryIds, isPublished } = req.body
+        await prisma.trackCategory.deleteMany({ where: { trackId: id } })
+        const track = await prisma.track.update({
+          where: { id },
+          data: {
+            title,
+            artist,
+            duration,
+            filePath,
+            coverPath,
+            price,
+            isPublished,
+            categories: {
+              create: categoryIds?.map((categoryId: string) => ({
+                category: { connect: { id: categoryId } },
+              })) || [],
+            },
+          },
+          include: { categories: { include: { category: true } } },
+        })
+        return res.status(200).json({
+          id: track.id,
+          title: track.title,
+          artist: track.artist,
+          duration: track.duration,
+          coverUrl: track.coverPath ? getPublicUrl(BUCKETS.COVERS, track.coverPath) : null,
+          filePath: track.filePath,
+          coverPath: track.coverPath,
+          price: track.price,
+          isPublished: track.isPublished,
+          categories: track.categories.map((tc) => ({
+            id: tc.category.id,
+            name: tc.category.name,
+            slug: tc.category.slug,
+            icon: tc.category.icon,
+          })),
+          createdAt: track.createdAt,
+          updatedAt: track.updatedAt,
+        })
+      }
+
+      if (method === 'DELETE') {
+        await prisma.trackCategory.deleteMany({ where: { trackId: id } })
+        await prisma.playHistory.deleteMany({ where: { trackId: id } })
+        await prisma.purchase.deleteMany({ where: { trackId: id } })
+        await prisma.track.delete({ where: { id } })
+        return res.status(200).json({ success: true })
+      }
     }
 
     // USERS - GET ALL
@@ -647,48 +676,50 @@ if (route === 'upload-url' && method === 'POST') {
       })
     }
 
-    // USERS - GET ONE
-    if (route.match(/^users\/[^/]+$/) && method === 'GET') {
-      const id = route.split('/')[1]
-      const user = await prisma.user.findUnique({
-        where: { id },
-        include: { _count: { select: { purchases: true, playHistory: true } } },
-      })
-      if (!user) {
-        return res.status(404).json({ error: 'User not found' })
+    // USERS - GET ONE / UPDATE
+    const userMatch = route.match(/^users\/([^/]+)$/)
+    if (userMatch) {
+      const id = userMatch[1]
+
+      if (method === 'GET') {
+        const user = await prisma.user.findUnique({
+          where: { id },
+          include: { _count: { select: { purchases: true, playHistory: true } } },
+        })
+        if (!user) {
+          return res.status(404).json({ error: 'User not found' })
+        }
+        const spent = await prisma.payment.aggregate({
+          where: { userId: id, status: 'success' },
+          _sum: { amount: true },
+        })
+        const now = new Date()
+        return res.status(200).json({
+          ...serializeUser(user),
+          hasActiveSubscription: user.subscriptionUntil && user.subscriptionUntil > now,
+          purchaseCount: user._count.purchases,
+          playCount: user._count.playHistory,
+          totalSpent: spent._sum.amount || 0,
+        })
       }
-      const spent = await prisma.payment.aggregate({
-        where: { userId: id, status: 'success' },
-        _sum: { amount: true },
-      })
-      const now = new Date()
-      return res.status(200).json({
-        ...serializeUser(user),
-        hasActiveSubscription: user.subscriptionUntil && user.subscriptionUntil > now,
-        purchaseCount: user._count.purchases,
-        playCount: user._count.playHistory,
-        totalSpent: spent._sum.amount || 0,
-      })
+
+      if (method === 'PUT') {
+        const { isAdmin, subscriptionUntil } = req.body
+        const user = await prisma.user.update({
+          where: { id },
+          data: {
+            isAdmin,
+            subscriptionUntil: subscriptionUntil ? new Date(subscriptionUntil) : undefined,
+          },
+        })
+        return res.status(200).json(serializeUser(user))
+      }
     }
 
-    // USERS - UPDATE
-    if (route.match(/^users\/[^/]+$/) && method === 'PUT') {
-      const id = route.split('/')[1]
-      const { isAdmin, subscriptionUntil } = req.body
-      const user = await prisma.user.update({
-        where: { id },
-        data: {
-          isAdmin,
-          subscriptionUntil: subscriptionUntil ? new Date(subscriptionUntil) : undefined,
-        },
-      })
-      return res.status(200).json(serializeUser(user))
-    }
-
-    return res.status(404).json({ error: 'Not found' })
+    return res.status(404).json({ error: 'Admin endpoint not found', route, method })
   } catch (error) {
     console.error('Admin API error:', error)
-    return res.status(500).json({ error: 'Internal server error' })
+    return res.status(500).json({ error: 'Internal server error', details: String(error) })
   }
 }
 

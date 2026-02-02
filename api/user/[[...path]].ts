@@ -4,17 +4,30 @@ import prisma from '../_lib/prisma'
 import { getPublicUrl, BUCKETS } from '../_lib/supabase'
 import { getSettings } from '../_lib/settings'
 
+// Helper to parse route from URL
+function parseRoute(url: string): string {
+  // URL like /api/user/profile -> profile
+  const match = url.match(/\/api\/user\/?(.*)/)
+  if (!match) return ''
+  
+  // Remove query string
+  let route = match[1].split('?')[0]
+  // Remove trailing slash
+  route = route.replace(/\/$/, '')
+  
+  console.log('[User API] URL:', url, '-> Route:', route)
+  return route
+}
+
 async function handler(req: AuthenticatedRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  // Парсим route из URL напрямую
   const url = req.url || ''
-  const match = url.match(/\/api\/user\/?([\w-]*)/)
-  const route = match?.[1] || ''
+  const route = parseRoute(url)
   
-  console.log('User API - URL:', url, 'Route:', route)
+  console.log('[User API] Route:', route)
 
   try {
     // PROFILE
@@ -146,7 +159,7 @@ async function handler(req: AuthenticatedRequest, res: VercelResponse) {
       })
     }
 
-    return res.status(404).json({ error: 'Not found', route, url })
+    return res.status(404).json({ error: 'User endpoint not found', route })
   } catch (error) {
     console.error('User API error:', error)
     return res.status(500).json({ error: 'Internal server error' })

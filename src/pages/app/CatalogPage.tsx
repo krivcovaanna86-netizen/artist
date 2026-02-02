@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getTracks, getCategories, getUserPurchases, checkCanPlay } from '../../lib/api/client'
+import { getTracks, getCategories, getUserPurchases } from '../../lib/api/client'
 import { TrackCard } from '../../components/tracks/TrackCard'
 import { CategoryFilter } from '../../components/tracks/CategoryFilter'
 import { TrackListSkeleton } from '../../components/ui/Skeleton'
@@ -8,18 +8,28 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { Input } from '../../components/ui/Input'
 import { useAuthStore } from '../../stores/authStore'
 
+type SortOption = 'createdAt' | 'playCount' | 'title'
+type SortOrder = 'asc' | 'desc'
+
 export default function CatalogPage() {
   const { user } = useAuthStore()
   const [search, setSearch] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [sortBy, setSortBy] = useState<SortOption>('createdAt')
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
 
   // Debounce search
-  const handleSearchChange = (value: string) => {
-    setSearch(value)
-    const timeoutId = setTimeout(() => setDebouncedSearch(value), 300)
-    return () => clearTimeout(timeoutId)
-  }
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [search])
+
+  const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearch(e.target.value)
+  }, [])
 
   // Fetch categories
   const { data: categories = [] } = useQuery({
@@ -33,11 +43,13 @@ export default function CatalogPage() {
     isLoading,
     error,
   } = useQuery({
-    queryKey: ['tracks', selectedCategory, debouncedSearch],
+    queryKey: ['tracks', selectedCategory, debouncedSearch, sortBy, sortOrder],
     queryFn: () =>
       getTracks({
         category: selectedCategory || undefined,
         search: debouncedSearch || undefined,
+        sort: sortBy,
+        order: sortOrder,
         limit: 50,
       }),
   })
@@ -51,10 +63,16 @@ export default function CatalogPage() {
 
   const purchasedTrackIds = new Set(purchases.map((p) => p.track.id))
 
+  const sortOptions: { value: SortOption; label: string }[] = [
+    { value: 'createdAt', label: 'По дате' },
+    { value: 'playCount', label: 'По популярности' },
+    { value: 'title', label: 'По названию' },
+  ]
+
   return (
     <div className="flex flex-col min-h-screen">
-      {/* Header */}
-      <header className="sticky top-0 z-30 bg-tg-bg border-b border-tg-secondary-bg">
+      {/* Header - Hidden on desktop (shown in AppLayout) */}
+      <header className="lg:hidden sticky top-0 z-30 bg-tg-bg border-b border-tg-secondary-bg">
         <div className="p-4">
           <h1 className="text-2xl font-bold text-tg-text mb-4">Каталог</h1>
 
@@ -63,7 +81,7 @@ export default function CatalogPage() {
             <Input
               placeholder="Поиск треков..."
               value={search}
-              onChange={(e) => handleSearchChange(e.target.value)}
+              onChange={handleSearchChange}
             />
           </div>
 
@@ -78,8 +96,66 @@ export default function CatalogPage() {
         </div>
       </header>
 
+      {/* Desktop Search & Filters */}
+      <div className="hidden lg:block mb-6">
+        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+          {/* Search */}
+          <div className="w-full md:w-96">
+            <Input
+              placeholder="Поиск треков..."
+              value={search}
+              onChange={handleSearchChange}
+              className="w-full"
+            />
+          </div>
+
+          {/* Sort */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-tg-hint">Сортировка:</span>
+            <div className="flex bg-tg-secondary-bg rounded-lg p-1">
+              {sortOptions.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => {
+                    if (sortBy === option.value) {
+                      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+                    } else {
+                      setSortBy(option.value)
+                      setSortOrder('desc')
+                    }
+                  }}
+                  className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                    sortBy === option.value
+                      ? 'bg-tg-button text-tg-button-text'
+                      : 'text-tg-text hover:bg-tg-bg'
+                  }`}
+                >
+                  {option.label}
+                  {sortBy === option.value && (
+                    <span className="ml-1">
+                      {sortOrder === 'asc' ? '↑' : '↓'}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Categories */}
+        {categories.length > 0 && (
+          <div className="mt-4">
+            <CategoryFilter
+              categories={categories}
+              selected={selectedCategory}
+              onSelect={setSelectedCategory}
+            />
+          </div>
+        )}
+      </div>
+
       {/* Track list */}
-      <div className="flex-1 p-4 pt-2">
+      <div className="flex-1 p-4 lg:p-0 pt-2">
         {isLoading ? (
           <TrackListSkeleton count={8} />
         ) : error ? (
@@ -103,15 +179,35 @@ export default function CatalogPage() {
             description={search ? 'Попробуйте изменить поисковый запрос' : 'В каталоге пока нет треков'}
           />
         ) : (
-          <div className="space-y-2">
-            {tracksData.tracks.map((track) => (
-              <TrackCard
-                key={track.id}
-                track={track}
-                isPurchased={purchasedTrackIds.has(track.id)}
-              />
-            ))}
-          </div>
+          <>
+            {/* Results count */}
+            <p className="text-sm text-tg-hint mb-4 hidden lg:block">
+              Найдено: {tracksData.tracks.length} треков
+            </p>
+
+            {/* Mobile: List view */}
+            <div className="space-y-2 lg:hidden">
+              {tracksData.tracks.map((track) => (
+                <TrackCard
+                  key={track.id}
+                  track={track}
+                  isPurchased={purchasedTrackIds.has(track.id)}
+                />
+              ))}
+            </div>
+
+            {/* Desktop: Grid view */}
+            <div className="hidden lg:grid lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
+              {tracksData.tracks.map((track) => (
+                <TrackCard
+                  key={track.id}
+                  track={track}
+                  isPurchased={purchasedTrackIds.has(track.id)}
+                  variant="card"
+                />
+              ))}
+            </div>
+          </>
         )}
       </div>
     </div>
