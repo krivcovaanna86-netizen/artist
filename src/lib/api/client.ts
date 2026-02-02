@@ -8,21 +8,82 @@ const api = axios.create({
   },
 })
 
+// Check if we're in dev mode
+const isDevMode = () => {
+  return !window.Telegram?.WebApp?.initData && 
+         !localStorage.getItem('telegram_auth') && 
+         localStorage.getItem('devMode') === 'true'
+}
+
+// Get Telegram auth header
+const getTelegramAuthHeader = (): string | null => {
+  try {
+    const stored = localStorage.getItem('telegram_auth')
+    if (stored) {
+      // Convert to query string format similar to initData
+      const data = JSON.parse(stored)
+      const params = new URLSearchParams()
+      params.set('id', data.id.toString())
+      params.set('first_name', data.first_name)
+      if (data.last_name) params.set('last_name', data.last_name)
+      if (data.username) params.set('username', data.username)
+      if (data.photo_url) params.set('photo_url', data.photo_url)
+      params.set('auth_date', data.auth_date.toString())
+      params.set('hash', data.hash)
+      return params.toString()
+    }
+  } catch (e) {
+    console.error('[API] Failed to parse telegram auth:', e)
+  }
+  return null
+}
+
 // Add init data to every request
 api.interceptors.request.use((config) => {
+  console.log(`[API] Request: ${config.method?.toUpperCase()} ${config.url}`)
+  
+  // First priority: Telegram WebApp initData
   const initData = window.Telegram?.WebApp?.initData || ''
   if (initData) {
+    console.log('[API] Using Telegram WebApp initData')
     config.headers['X-Telegram-Init-Data'] = initData
+    return config
   }
+  
+  // Second priority: Telegram Login Widget auth
+  const telegramAuth = getTelegramAuthHeader()
+  if (telegramAuth) {
+    console.log('[API] Using Telegram Login auth')
+    config.headers['X-Telegram-Auth'] = telegramAuth
+    return config
+  }
+  
+  // Third priority: Dev mode
+  if (isDevMode()) {
+    console.log('[API] Using dev mode')
+    config.headers['X-Dev-Mode'] = 'true'
+  }
+  
   return config
 })
 
 // Handle errors
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.log(`[API] Response: ${response.status} ${response.config.url}`)
+    return response
+  },
   (error) => {
-    if (error.response?.status === 401) {
-      console.error('Unauthorized request')
+    const status = error.response?.status
+    const url = error.config?.url
+    console.error(`[API] Error: ${status} ${url}`, error.response?.data || error.message)
+    
+    if (status === 401) {
+      console.error('[API] Unauthorized - auth info:', {
+        hasTelegramWebApp: !!window.Telegram?.WebApp?.initData,
+        hasTelegramAuth: !!localStorage.getItem('telegram_auth'),
+        isDevMode: isDevMode()
+      })
     }
     return Promise.reject(error)
   }

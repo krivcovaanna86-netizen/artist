@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useTelegramWebApp } from './lib/hooks/useTelegramWebApp'
 import { useAuthStore } from './stores/authStore'
+import { useTheme } from './lib/hooks/useTheme'
 
 // Layouts
 import AppLayout from './components/layout/AppLayout'
@@ -25,33 +26,54 @@ import AdminSettings from './pages/admin/SettingsPage'
 // Components
 import { LoadingScreen } from './components/ui/LoadingScreen'
 import { MiniPlayer } from './components/player/MiniPlayer'
-import { useState } from 'react'
+import { DevModeLogin } from './components/ui/DevModeLogin'
+import { DebugPanel, installLogInterceptors } from './components/ui/DebugPanel'
+
+// Install log interceptors for debug panel
+installLogInterceptors()
+
 function App() {
   const { isReady, webApp } = useTelegramWebApp()
-  const { user, isLoading, error, fetchUser } = useAuthStore()
-  const [appError, setAppError] = useState<string | null>(null)
+  const { user, isLoading, error, isDevMode, fetchUser } = useAuthStore()
+  
+  // Initialize theme
+  useTheme()
 
   useEffect(() => {
-    if (isReady && webApp) {
-      webApp.expand()
-      webApp.setHeaderColor('secondary_bg_color')
-      webApp.enableClosingConfirmation()
+    if (isReady) {
+      if (webApp) {
+        webApp.expand()
+        webApp.setHeaderColor('secondary_bg_color')
+        webApp.enableClosingConfirmation()
+      }
       fetchUser()
     }
   }, [isReady, webApp, fetchUser])
 
-  // Показать ошибку если есть
-  if (appError || error) {
+  // Show loading screen
+  if (!isReady || isLoading) {
+    return <LoadingScreen />
+  }
+
+  // Show dev mode login if not in Telegram and no user
+  if (!user && isDevMode) {
     return (
-      <div className="min-h-screen bg-tg-bg text-tg-text p-4">
-        <h1 className="text-red-500 text-xl mb-4">Ошибка:</h1>
-        <pre className="text-sm whitespace-pre-wrap">{appError || error}</pre>
-      </div>
+      <>
+        <DevModeLogin />
+        <DebugPanel />
+      </>
     )
   }
 
-  if (!isReady || isLoading) {
-    return <LoadingScreen />
+  // Show error if there's an auth error and not in dev mode
+  if (error && !isDevMode) {
+    return (
+      <div className="min-h-screen bg-tg-bg text-tg-text p-4">
+        <h1 className="text-red-500 text-xl mb-4">Ошибка:</h1>
+        <pre className="text-sm whitespace-pre-wrap">{error}</pre>
+        <DebugPanel />
+      </div>
+    )
   }
 
   return (
@@ -84,6 +106,9 @@ function App() {
 
       {/* Mini Player - always visible when track is playing */}
       <MiniPlayer />
+      
+      {/* Debug Panel - always available */}
+      <DebugPanel />
     </div>
   )
 }

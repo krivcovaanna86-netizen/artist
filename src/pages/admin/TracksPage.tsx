@@ -28,6 +28,7 @@ export default function AdminTracksPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingTrack, setEditingTrack] = useState<AdminTrack | null>(null)
   const [isUploading, setIsUploading] = useState(false)
+  const [uploadStatus, setUploadStatus] = useState<string>('')
   const [isExtractingCover, setIsExtractingCover] = useState(false)
   const [coverPreview, setCoverPreview] = useState<string | null>(null)
 
@@ -45,9 +46,12 @@ export default function AdminTracksPage() {
   const [uploadedCoverPath, setUploadedCoverPath] = useState('')
 
   // Queries
-  const { data: tracksData, isLoading } = useQuery({
+  const { data: tracksData, isLoading, error: tracksError } = useQuery({
     queryKey: ['admin', 'tracks', search],
-    queryFn: () => getAdminTracks({ search: search || undefined, limit: 50 }),
+    queryFn: () => {
+      console.log('[TracksPage] Fetching tracks...')
+      return getAdminTracks({ search: search || undefined, limit: 50 })
+    },
   })
 
   const { data: categories = [] } = useQuery({
@@ -58,35 +62,45 @@ export default function AdminTracksPage() {
   // Mutations
   const createMutation = useMutation({
     mutationFn: createTrack,
-    onSuccess: () => {
+    onSuccess: (data) => {
+      console.log('[TracksPage] ✅ Track created successfully:', data.id)
       queryClient.invalidateQueries({ queryKey: ['admin', 'tracks'] })
       closeModal()
       hapticFeedback('success')
+      setUploadStatus('')
     },
-    onError: () => {
+    onError: (error) => {
+      console.error('[TracksPage] ❌ Create track error:', error)
       showAlert('Ошибка при создании трека')
+      setUploadStatus('')
     },
   })
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) => updateTrack(id, data),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      console.log('[TracksPage] ✅ Track updated successfully:', data.id)
       queryClient.invalidateQueries({ queryKey: ['admin', 'tracks'] })
       closeModal()
       hapticFeedback('success')
+      setUploadStatus('')
     },
-    onError: () => {
+    onError: (error) => {
+      console.error('[TracksPage] ❌ Update track error:', error)
       showAlert('Ошибка при обновлении трека')
+      setUploadStatus('')
     },
   })
 
   const deleteMutation = useMutation({
     mutationFn: deleteTrack,
     onSuccess: () => {
+      console.log('[TracksPage] ✅ Track deleted successfully')
       queryClient.invalidateQueries({ queryKey: ['admin', 'tracks'] })
       hapticFeedback('success')
     },
-    onError: () => {
+    onError: (error) => {
+      console.error('[TracksPage] ❌ Delete track error:', error)
       showAlert('Ошибка при удалении трека')
     },
   })
@@ -119,6 +133,7 @@ export default function AdminTracksPage() {
     }
     setAudioFile(null)
     setCoverFile(null)
+    setUploadStatus('')
     setIsModalOpen(true)
   }
 
@@ -130,15 +145,31 @@ export default function AdminTracksPage() {
     setUploadedAudioPath('')
     setUploadedCoverPath('')
     setCoverPreview(null)
+    setUploadStatus('')
   }
 
-  const handleFileUpload = async (file: File, type: 'track' | 'cover') => {
+  const handleFileUpload = async (file: File, type: 'track' | 'cover'): Promise<string> => {
+    const step = type === 'track' ? 'audio' : 'cover'
+    
     try {
+      console.log(`[TracksPage] 📤 Step: Getting upload URL for ${step}...`)
+      setUploadStatus(`Получение URL для ${step === 'audio' ? 'аудио' : 'обложки'}...`)
+      
       const { uploadUrl, path } = await getUploadUrl(file.name, type)
+      console.log(`[TracksPage] Got upload URL, path: ${path}`)
+      
+      console.log(`[TracksPage] 📤 Step: Uploading ${step} file...`)
+      setUploadStatus(`Загрузка ${step === 'audio' ? 'аудио' : 'обложки'}... 0%`)
+      
       await uploadFile(uploadUrl, file)
+      
+      console.log(`[TracksPage] ✅ ${step} uploaded successfully to: ${path}`)
+      setUploadStatus(`${step === 'audio' ? 'Аудио' : 'Обложка'} загружена ✓`)
+      
       return path
     } catch (error) {
-      console.error('Upload error:', error)
+      console.error(`[TracksPage] ❌ ${step} upload failed:`, error)
+      setUploadStatus(`Ошибка загрузки ${step === 'audio' ? 'аудио' : 'обложки'}`)
       throw error
     }
   }
@@ -148,14 +179,22 @@ export default function AdminTracksPage() {
     const file = e.target.files?.[0]
     if (!file) return
     
+    console.log('[TracksPage] Audio file selected:', {
+      name: file.name,
+      type: file.type,
+      size: `${(file.size / 1024 / 1024).toFixed(2)} MB`
+    })
+    
     setAudioFile(file)
     
     // Попробовать извлечь обложку из файла
     if (!coverFile && !uploadedCoverPath) {
+      console.log('[TracksPage] Attempting to extract cover from audio...')
       setIsExtractingCover(true)
       try {
         const coverBlob = await extractCoverFromAudioFile(file)
         if (coverBlob) {
+          console.log('[TracksPage] ✅ Cover extracted from audio file')
           const coverFileFromBlob = blobToFile(coverBlob, `cover-${Date.now()}.jpg`)
           setCoverFile(coverFileFromBlob)
           
@@ -164,9 +203,11 @@ export default function AdminTracksPage() {
           setCoverPreview(previewUrl)
           
           hapticFeedback('success')
+        } else {
+          console.log('[TracksPage] No cover found in audio file')
         }
       } catch (error) {
-        console.error('Error extracting cover:', error)
+        console.error('[TracksPage] Error extracting cover:', error)
       } finally {
         setIsExtractingCover(false)
       }
@@ -178,6 +219,12 @@ export default function AdminTracksPage() {
     const file = e.target.files?.[0]
     if (!file) return
     
+    console.log('[TracksPage] Cover file selected:', {
+      name: file.name,
+      type: file.type,
+      size: `${(file.size / 1024).toFixed(2)} KB`
+    })
+    
     setCoverFile(file)
     
     // Показать превью
@@ -186,12 +233,21 @@ export default function AdminTracksPage() {
   }, [])
 
   const handleSubmit = async () => {
+    console.log('[TracksPage] 🚀 Starting track submit...')
+    console.log('[TracksPage] Form data:', formData)
+    console.log('[TracksPage] Audio file:', audioFile?.name || 'none')
+    console.log('[TracksPage] Cover file:', coverFile?.name || 'none')
+    console.log('[TracksPage] Uploaded audio path:', uploadedAudioPath || 'none')
+    console.log('[TracksPage] Uploaded cover path:', uploadedCoverPath || 'none')
+    
     if (!formData.title || !formData.artist) {
+      console.log('[TracksPage] ❌ Validation failed: missing title or artist')
       showAlert('Заполните название и исполнителя')
       return
     }
 
     setIsUploading(true)
+    setUploadStatus('Начинаем...')
 
     try {
       let audioPath = uploadedAudioPath
@@ -199,17 +255,23 @@ export default function AdminTracksPage() {
 
       // Upload audio if new file selected
       if (audioFile) {
+        console.log('[TracksPage] Uploading new audio file...')
         audioPath = await handleFileUpload(audioFile, 'track')
+        console.log('[TracksPage] Audio uploaded to:', audioPath)
       }
 
       // Upload cover if new file selected
       if (coverFile) {
+        console.log('[TracksPage] Uploading new cover file...')
         coverPath = await handleFileUpload(coverFile, 'cover')
+        console.log('[TracksPage] Cover uploaded to:', coverPath)
       }
 
       if (!audioPath && !editingTrack) {
+        console.log('[TracksPage] ❌ No audio file for new track')
         showAlert('Загрузите аудиофайл')
         setIsUploading(false)
+        setUploadStatus('')
         return
       }
 
@@ -223,13 +285,20 @@ export default function AdminTracksPage() {
         isPublished: formData.isPublished,
       }
 
+      console.log('[TracksPage] 📤 Submitting track data:', trackData)
+      setUploadStatus(editingTrack ? 'Сохранение трека...' : 'Создание трека...')
+
       if (editingTrack) {
+        console.log('[TracksPage] Updating existing track:', editingTrack.id)
         updateMutation.mutate({ id: editingTrack.id, data: trackData })
       } else {
+        console.log('[TracksPage] Creating new track')
         createMutation.mutate(trackData)
       }
     } catch (error) {
+      console.error('[TracksPage] ❌ Submit error:', error)
       showAlert('Ошибка при загрузке файлов')
+      setUploadStatus('Ошибка!')
     } finally {
       setIsUploading(false)
     }
@@ -240,6 +309,11 @@ export default function AdminTracksPage() {
     if (confirmed) {
       deleteMutation.mutate(track.id)
     }
+  }
+
+  // Show error if loading tracks failed
+  if (tracksError) {
+    console.error('[TracksPage] Error loading tracks:', tracksError)
   }
 
   return (
@@ -254,6 +328,15 @@ export default function AdminTracksPage() {
         />
         <Button onClick={() => openModal()}>+ Добавить</Button>
       </div>
+
+      {/* Error display */}
+      {tracksError && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
+          <p className="text-sm text-red-500">
+            Ошибка загрузки треков: {(tracksError as Error).message}
+          </p>
+        </div>
+      )}
 
       {/* Stats on desktop */}
       {tracksData && (
@@ -393,6 +476,11 @@ export default function AdminTracksPage() {
             {uploadedAudioPath && !audioFile && (
               <p className="text-xs text-tg-hint mt-1">Текущий файл: {uploadedAudioPath}</p>
             )}
+            {audioFile && (
+              <p className="text-xs text-tg-accent mt-1">
+                Выбран: {audioFile.name} ({(audioFile.size / 1024 / 1024).toFixed(2)} MB)
+              </p>
+            )}
             {isExtractingCover && (
               <p className="text-xs text-tg-accent mt-1 animate-pulse">⏳ Извлечение обложки из файла...</p>
             )}
@@ -472,6 +560,18 @@ export default function AdminTracksPage() {
             />
             <span className="text-tg-text">Опубликовать</span>
           </label>
+
+          {/* Upload Status */}
+          {uploadStatus && (
+            <div className="bg-tg-secondary-bg rounded-lg p-3">
+              <p className="text-sm text-tg-text flex items-center gap-2">
+                {(isUploading || createMutation.isPending || updateMutation.isPending) && (
+                  <span className="animate-spin">⏳</span>
+                )}
+                {uploadStatus}
+              </p>
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex gap-3 pt-4">

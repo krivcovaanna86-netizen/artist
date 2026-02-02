@@ -1,22 +1,102 @@
-import axios from 'axios'
+import axios, { AxiosError } from 'axios'
 import type { Category, Pagination, User } from './client'
 
 const api = axios.create({
   baseURL: '/api/admin',
-  timeout: 30000,
+  timeout: 60000, // 60 seconds for uploads
   headers: {
     'Content-Type': 'application/json',
   },
 })
 
-// Add init data to every request
+// Check if we're in dev mode
+const isDevMode = () => {
+  return !window.Telegram?.WebApp?.initData && 
+         !localStorage.getItem('telegram_auth') && 
+         localStorage.getItem('devMode') === 'true'
+}
+
+// Get Telegram auth header
+const getTelegramAuthHeader = (): string | null => {
+  try {
+    const stored = localStorage.getItem('telegram_auth')
+    if (stored) {
+      const data = JSON.parse(stored)
+      const params = new URLSearchParams()
+      params.set('id', data.id.toString())
+      params.set('first_name', data.first_name)
+      if (data.last_name) params.set('last_name', data.last_name)
+      if (data.username) params.set('username', data.username)
+      if (data.photo_url) params.set('photo_url', data.photo_url)
+      params.set('auth_date', data.auth_date.toString())
+      params.set('hash', data.hash)
+      return params.toString()
+    }
+  } catch (e) {
+    console.error('[Admin API] Failed to parse telegram auth:', e)
+  }
+  return null
+}
+
+// Add init data to every request with detailed logging
 api.interceptors.request.use((config) => {
+  console.log(`[Admin API] 📤 Request: ${config.method?.toUpperCase()} ${config.url}`)
+  if (config.data) {
+    console.log('[Admin API] Request data:', config.data)
+  }
+  
+  // First priority: Telegram WebApp initData
   const initData = window.Telegram?.WebApp?.initData || ''
   if (initData) {
+    console.log('[Admin API] Using Telegram WebApp initData')
     config.headers['X-Telegram-Init-Data'] = initData
+    return config
   }
+  
+  // Second priority: Telegram Login Widget auth
+  const telegramAuth = getTelegramAuthHeader()
+  if (telegramAuth) {
+    console.log('[Admin API] Using Telegram Login auth')
+    config.headers['X-Telegram-Auth'] = telegramAuth
+    return config
+  }
+  
+  // Third priority: Dev mode
+  if (isDevMode()) {
+    console.log('[Admin API] Using dev mode')
+    config.headers['X-Dev-Mode'] = 'true'
+  }
+  
   return config
 })
+
+// Response interceptor with detailed logging
+api.interceptors.response.use(
+  (response) => {
+    console.log(`[Admin API] ✅ Response: ${response.status} ${response.config.url}`)
+    if (response.data) {
+      const summary = JSON.stringify(response.data).slice(0, 200)
+      console.log(`[Admin API] Response data: ${summary}${summary.length >= 200 ? '...' : ''}`)
+    }
+    return response
+  },
+  (error: AxiosError) => {
+    const status = error.response?.status
+    const url = error.config?.url
+    console.error(`[Admin API] ❌ Error: ${status || 'network'} ${url}`)
+    console.error('[Admin API] Error details:', error.response?.data || error.message)
+    
+    if (status === 401) {
+      console.error('[Admin API] Auth info:', {
+        hasTelegramWebApp: !!window.Telegram?.WebApp?.initData,
+        hasTelegramAuth: !!localStorage.getItem('telegram_auth'),
+        isDevMode: isDevMode()
+      })
+    }
+    
+    return Promise.reject(error)
+  }
+)
 
 // Types
 export interface AdminTrack {
@@ -127,24 +207,61 @@ export interface AppSettings {
   supportTelegram: string
 }
 
-// Upload
+// Upload with detailed logging
 export async function getUploadUrl(filename: string, type: 'track' | 'cover') {
-  const { data } = await api.post<{ uploadUrl: string; path: string; token: string }>('/upload-url', {
-    filename,
-    type,
-  })
-  return data
+  console.log(`[Upload] 🔗 Getting upload URL for: ${filename} (type: ${type})`)
+  
+  try {
+    const { data } = await api.post<{ uploadUrl: string; path: string; token: string }>('/upload-url', {
+      filename,
+      type,
+    })
+    
+    console.log(`[Upload] ✅ Got upload URL, path: ${data.path}`)
+    return data
+  } catch (error) {
+    console.error(`[Upload] ❌ Failed to get upload URL:`, error)
+    throw error
+  }
 }
 
 export async function uploadFile(uploadUrl: string, file: File) {
-  await axios.put(uploadUrl, file, {
-    headers: {
-      'Content-Type': file.type,
-    },
+  console.log(`[Upload] ⬆️ Starting file upload:`, {
+    name: file.name,
+    type: file.type,
+    size: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
+    url: uploadUrl.substring(0, 100) + '...'
   })
+  
+  try {
+    const response = await axios.put(uploadUrl, file, {
+      headers: {
+        'Content-Type': file.type,
+      },
+      timeout: 120000, // 2 minutes for large files
+      onUploadProgress: (progressEvent) => {
+        if (progressEvent.total) {
+          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+          console.log(`[Upload] 📊 Progress: ${percentCompleted}%`)
+        }
+      }
+    })
+    
+    console.log(`[Upload] ✅ File uploaded successfully, status: ${response.status}`)
+    return response
+  } catch (error) {
+    console.error(`[Upload] ❌ File upload failed:`, error)
+    
+    if (axios.isAxiosError(error)) {
+      console.error(`[Upload] Status: ${error.response?.status}`)
+      console.error(`[Upload] Response:`, error.response?.data)
+    }
+    
+    throw error
+  }
 }
 
-// Tracks
+// Tracks with logging
 export async function getAdminTracks(params?: {
   search?: string
   category?: string
@@ -154,11 +271,14 @@ export async function getAdminTracks(params?: {
   page?: number
   limit?: number
 }) {
+  console.log('[Admin API] Fetching tracks with params:', params)
   const { data } = await api.get<{ tracks: AdminTrack[]; pagination: Pagination }>('/tracks', { params })
+  console.log(`[Admin API] Fetched ${data.tracks.length} tracks`)
   return data
 }
 
 export async function getAdminTrack(id: string) {
+  console.log('[Admin API] Fetching track:', id)
   const { data } = await api.get<AdminTrack>(`/tracks/${id}`)
   return data
 }
@@ -173,8 +293,16 @@ export async function createTrack(trackData: {
   categoryIds?: string[]
   isPublished?: boolean
 }) {
-  const { data } = await api.post<AdminTrack>('/tracks', trackData)
-  return data
+  console.log('[Admin API] 🎵 Creating track:', trackData)
+  
+  try {
+    const { data } = await api.post<AdminTrack>('/tracks', trackData)
+    console.log('[Admin API] ✅ Track created:', data.id)
+    return data
+  } catch (error) {
+    console.error('[Admin API] ❌ Failed to create track:', error)
+    throw error
+  }
 }
 
 export async function updateTrack(
@@ -190,12 +318,22 @@ export async function updateTrack(
     isPublished?: boolean
   }
 ) {
-  const { data } = await api.put<AdminTrack>(`/tracks/${id}`, trackData)
-  return data
+  console.log('[Admin API] 🎵 Updating track:', id, trackData)
+  
+  try {
+    const { data } = await api.put<AdminTrack>(`/tracks/${id}`, trackData)
+    console.log('[Admin API] ✅ Track updated:', data.id)
+    return data
+  } catch (error) {
+    console.error('[Admin API] ❌ Failed to update track:', error)
+    throw error
+  }
 }
 
 export async function deleteTrack(id: string) {
+  console.log('[Admin API] 🗑️ Deleting track:', id)
   await api.delete(`/tracks/${id}`)
+  console.log('[Admin API] ✅ Track deleted')
 }
 
 // Categories
